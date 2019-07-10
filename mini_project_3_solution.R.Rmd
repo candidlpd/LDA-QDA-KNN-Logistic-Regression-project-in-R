@@ -1,0 +1,271 @@
+---
+title: "Untitled"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r Libraries, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(MASS)
+library(caret)
+library(pROC)
+
+```
+
+Importing Data
+
+```{r Data Import}
+
+setwd('D:\\Folder\\Dangal\\Assignment 2')
+
+admsn_data <- read.csv('admission.csv')
+
+```
+Question 1a)
+
+```{r Exploratory Analysis}
+#Changing type of variable
+
+admsn_data$Group<- as.factor(admsn_data$Group)
+
+admsn_data <- admsn_data[,c('GPA','GMAT','Group')]
+
+#Distribution of GPA groupwise
+ggplot(admsn_data,aes(x=Group,y=GPA))+geom_boxplot()
+
+
+#Distribution of GPA groupwise
+ggplot(admsn_data,aes(x=Group,y=GMAT))+geom_boxplot()
+
+#Scatterplot between GPA and GMAT
+
+ggplot(admsn_data,aes(x=GPA,y=GMAT))+geom_smooth()
+
+
+#Distribution of GPA and GMAT groupwise
+ggplot(admsn_data,aes(x=GPA,y=GMAT,shape=Group, color=Group))+geom_point()
+
+```
+
+Question 1b)
+
+```{r Model Building}
+#Splitting data into training and testing
+
+train_data <- admsn_data %>% group_by(Group) %>% mutate(seq=row_number(),n=n()) %>% 
+                  group_by(Group) %>%  filter(seq <= (n-5)) %>%dplyr:: select(-c(seq,n))
+  
+test_data <- admsn_data %>% group_by(Group) %>% mutate(seq=row_number(),n=n()) %>% 
+  group_by(Group) %>%  filter(seq > (n-5))%>%dplyr:: select(-c(seq,n))
+
+lda.fit <- lda(Group~GPA + GMAT, data=train_data)
+lda.fit
+
+#Equation for first discriminant function is 
+# -5.45811*GPA + -0.00752*GMAT
+
+#Equation for second discriminant function is 
+# 1.70413*GPA + -0.01466*GMAT
+
+#Predicting for train data
+
+lda.pred.train <- predict(lda.fit, train_data[,-3])
+
+#Confusion matrix for train data
+
+confusionMatrix(lda.pred.train$class, #The vector of predictions
+                train_data$Group #The vector of actuals
+                ,positive = "1")
+
+#Missclassfication rate- 4.28%
+
+#Predicting for test data
+
+lda.pred.test <- predict(lda.fit, test_data[,-3])
+
+#Confusion matrix
+
+confusionMatrix(lda.pred.test$class, #The vector of predictions
+                test_data$Group #The vector of actuals
+                ,positive = "1")
+
+#Missclassfication rate- 20%
+
+#Here, it is clearly visible that missclassificcation rate for test data is very high compared to
+#train data
+
+```
+
+Question 1c)
+
+```{r QDA}
+
+
+qda.fit <- qda(Group~GPA + GMAT, data=train_data)
+qda.fit
+
+#Predicting for train data
+
+qda.pred.train <- predict(qda.fit, train_data[,-3])
+
+#Confusion matrix
+confusionMatrix(qda.pred.train$class, train_data$Group)
+
+#Missclassfication rate- 2.85%
+
+#Predicting for test data
+
+qda.pred <- predict(qda.fit, test_data[,-3])
+names(qda.pred)
+
+#Confusion matrix
+
+confusionMatrix(qda.pred$class, test_data$Group)
+
+#Missclassfication rate- 13.3%
+
+#Here, it is clearly visible that missclassificcation rate for test data is very high compared to
+#train data but interestingly, it can be seen that missclassification rate for QDA is less and better than LDA
+
+```
+1d) Model building with knn
+
+```{r KNN}
+set.seed(400)
+ctrl <- trainControl(method="repeatedcv",repeats = 3,savePredictions = T)
+knnFit <- train(Group ~ ., data = train_data, method = "knn", trControl = ctrl, preProcess = c("center","scale"),tuneLength = 20)
+knnFit
+
+knnpred <- predict(knnFit,test_data[,-3])
+
+confusionMatrix(knnpred,test_data$Group)
+```
+1e) Which classifier would you recommend? Justify your conclusions
+
+```{r Explanation}
+
+# Accuracy and misclassification matrices for the both the model LDA and knn are rendering same results
+#. I would preferably choose knn over LDA as there are no assumption involved regarding the normality of predictor variables 
+
+```
+
+Question 2
+
+```{r Bankruptcy}
+
+bank_data <- read.csv('bankruptcy.csv') %>% dplyr::select(1:5) %>% mutate(Group=as.factor(Group))
+
+#Distribution of Predictor variables
+par(mfrow = c(2,2))
+for (i in 1:4) 
+{
+  hist((bank_data[,i]), main = paste("Distibution of ", colnames(bank_data[i])), xlab = colnames(bank_data[i]))
+}
+
+#Variable X1 seem to be close to normally distribution.Variable X2 is left skewed and nothing
+#concrete can be commented about X3 and X4
+
+# Distribution of Predictors by Response variable
+par(mfrow = c(2,2))
+for (i in 1:4) 
+{
+  boxplot((bank_data[,i])~ Group,data = bank_data, main = paste("Distibution of ", colnames(bank_data[i])), xlab = colnames(bank_data[i]))
+}
+
+#Here, distribution of non-bankrupt firm is for variables X1, X2 and X3 is on the higher side compared to bankrupt firm.
+
+#b) Logistic regression model
+
+model <- glm(Group ~ ., family = binomial, data = bank_data)
+summary(model)
+
+#Only X3 is significant, we will X3 in the final model
+
+#Therefore, final model is based on variable X3
+
+model1 <- glm(Group ~ X3, family = binomial, data = bank_data)
+summary(model1)
+
+#we expect to see about 2800% increase in the odds of being a nonbankrupt firm, for a one-unit increase in X3 variable
+
+```
+
+Question 3
+
+```{r Problem of Bankruptcy}
+
+pred<- predict(model1,data=bank_data,type='response')
+
+pred1 <- as.factor(ifelse(pred>0.5,1,0))
+
+confusionMatrix(pred1, #The vector of predictions
+                bank_data$Group #The vector of actuals
+                ,positive = "1")
+
+
+sensitivity(pred1,bank_data$Group)
+specificity(pred1,bank_data$Group)
+plot(roc(as.numeric(pred1),as.numeric(bank_data$Group)))
+
+#Here AUC value is 89% which is quite good
+
+#3b) Testing model bi removing significant variable and including all insignificant variable
+
+model2 <-  glm(Group ~ X1+X2+X4, family = binomial, data = bank_data)
+summary(model2)
+
+pred_<- predict(model2,data=bank_data,type='response')
+
+pred_1 <- as.factor(ifelse(pred_>0.5,1,0))
+
+confusionMatrix(pred_1, #The vector of predictions
+                bank_data$Group #The vector of actuals
+                ,positive = "1")
+
+sensitivity(pred_1,bank_data$Group)
+specificity(pred_1,bank_data$Group)
+plot(roc(as.numeric(pred_1),as.numeric(bank_data$Group)))
+
+#Here values of sensitivity, specificity and auc values dropped significantly when we included insignifcant variables
+#hence, we conclude that merely adding more number of predictors do not improve the predictive power of the model
+
+#c) Using LDA
+
+lda.model <- lda(Group~., data = bank_data)
+
+lda.pred<- predict(lda.model,data=bank_data,type='response')
+
+confusionMatrix(lda.pred$class, #The vector of predictions
+                bank_data$Group #The vector of actuals
+                ,positive = "1")
+
+sensitivity(lda.pred$class,bank_data$Group)
+specificity(lda.pred$class,bank_data$Group)
+plot(roc(as.numeric(lda.pred$class),as.numeric(bank_data$Group)))
+
+#d) Using QDA
+
+qda.model <- qda(Group~., data = bank_data)
+
+qda.pred<- predict(qda.model,data=bank_data,type='response')
+
+confusionMatrix(qda.pred$class, #The vector of predictions
+                bank_data$Group #The vector of actuals
+                ,positive = "1")
+
+sensitivity(qda.pred$class,bank_data$Group)
+specificity(qda.pred$class,bank_data$Group)
+plot(roc(as.numeric(qda.pred$class),as.numeric(bank_data$Group)))
+
+#e) Which model to use , Justify conclusion
+
+#Here, results from QDA are better in comparison to other models . But, i would prefer to use
+#Logistic regression model as the accuracy, sensitivity and other diagnostic meaures are close enough to the results of QDA
+#that to with only one predictor variable, whereas QDA uses 4 predictor variable to come up with these results
+
+
+
+```
